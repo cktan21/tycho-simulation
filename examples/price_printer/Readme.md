@@ -5,7 +5,9 @@ quotes from each pool.
 
 ## How to run
 
-```bash
-export RPC_URL=<your-node-rpc-url>
-cargo run --release --example price_printer -- --tvl-threshold 1000 --chain <ethereum | base | unichain>
+```shell
+# Set the Infura Ethereum RPC URL
+$env:RPC_URL = <your-node-rpc-url>
+# Run the price_printer example with a TVL threshold of 1000
+cargo run --release --example price_printer -- --tvl-threshold 1000
 ```
