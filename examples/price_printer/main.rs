@@ -1,7 +1,3 @@
-extern crate tycho_simulation;
-mod ui;
-pub mod utils;
-
 use std::{env, str::FromStr};
 
 use clap::Parser;
@@ -25,141 +21,59 @@ use tycho_simulation::{
     protocol::models::BlockUpdate,
     utils::load_all_tokens,
 };
-use utils::get_default_url;
 
-// use serde_json::json;
+use std::fs;
+use std::path::Path;
+use alloy_primitives::U256;
+use serde::{Deserialize};
+use std::collections::HashMap;
 
-#[derive(Parser)]
-struct Cli {
-    /// The tvl threshold to filter the graph by
-    #[arg(short, long, default_value_t = 1000.0)]
-    tvl_threshold: f64,
-    /// The target blockchain
-    #[clap(long, default_value = "ethereum")]
-    pub chain: String,
+#[derive(Debug, Deserialize)]
+struct RawUniswapV2Data {
+    uniswap_v2: Vec<RawPool>,
 }
 
-// this builder basically creATES a live updates stream for blockcahin updates => oif we wanna make it static we gonna have to make our own streamer we can't rely on this shit
-fn register_exchanges(
-    mut builder: ProtocolStreamBuilder,
-    chain: &Chain,
-    tvl_filter: ComponentFilter,
-) -> ProtocolStreamBuilder { //returns a protocol stream builder type with the following values
-    match chain {
-        Chain::Ethereum => {
-            builder = builder
-                .exchange::<UniswapV2State>("uniswap_v2", tvl_filter.clone(), None)
-                .exchange::<UniswapV3State>("uniswap_v3", tvl_filter.clone(), None)
-                .exchange::<EVMPoolState<PreCachedDB>>(
-                    "vm:balancer_v2",
-                    tvl_filter.clone(),
-                    Some(balancer_pool_filter),
-                )
-                .exchange::<EVMPoolState<PreCachedDB>>(
-                    "vm:curve",
-                    tvl_filter.clone(),
-                    Some(curve_pool_filter),
-                )
-                .exchange::<EkuboState>("ekubo_v2", tvl_filter.clone(), None)
-                .exchange::<UniswapV4State>(
-                    "uniswap_v4",
-                    tvl_filter.clone(),
-                    Some(uniswap_v4_pool_with_hook_filter),
-                )
-            // COMING SOON!
-            // .exchange::<EVMPoolState<PreCachedDB>>("vm:maverick_v2", tvl_filter.clone(), None)
-        }
-        Chain::Base => {
-            builder = builder
-                .exchange::<UniswapV2State>("uniswap_v2", tvl_filter.clone(), None)
-                .exchange::<UniswapV3State>("uniswap_v3", tvl_filter.clone(), None)
-                .exchange::<UniswapV4State>(
-                    "uniswap_v4",
-                    tvl_filter.clone(),
-                    Some(uniswap_v4_pool_with_hook_filter),
-                )
-        }
-        Chain::Unichain => {
-            builder = builder
-                .exchange::<UniswapV2State>("uniswap_v2", tvl_filter.clone(), None)
-                .exchange::<UniswapV3State>("uniswap_v3", tvl_filter.clone(), None)
-                .exchange::<UniswapV4State>(
-                    "uniswap_v4",
-                    tvl_filter.clone(),
-                    Some(uniswap_v4_pool_with_hook_filter),
-                )
-        }
-        _ => {}
+#[derive(Debug, Deserialize)]
+struct RawPool {
+    component_id: String,
+    attributes: HashMap<String, String>,
+    balances: HashMap<String, String>,
+}
+
+fn parse_uniswap_v2_data<P: AsRef<Path>>(path: P) -> Result<Vec<UniswapV2State>, Box<dyn std::error::Error>> {
+    let data = fs::read_to_string(path)?;
+    let raw_data: RawUniswapV2Data = serde_json::from_str(&data)?;
+
+    let mut states = Vec::new();
+
+    for pool in raw_data.uniswap_v2 {
+        let reserve0_hex = pool.attributes.get("reserve0").ok_or("Missing reserve0")?;
+        let reserve1_hex = pool.attributes.get("reserve1").ok_or("Missing reserve1")?;
+
+        let reserve0 = U256::from_str(reserve0_hex)?;
+        let reserve1 = U256::from_str(reserve1_hex)?;
+
+        let state = UniswapV2State::new(reserve0, reserve1);
+        states.push(state);
     }
-    builder
+
+    Ok(states)
 }
 
-#[tokio::main]
-async fn main() {
-    utils::setup_tracing();
-    // Parse command-line arguments into a Cli struct
-    let cli = Cli::parse();
-    let chain =
-        Chain::from_str(&cli.chain).unwrap_or_else(|_| panic!("Unknown chain {}", cli.chain));
 
-    let tycho_url = env::var("TYCHO_URL").unwrap_or_else(|_| {
-        get_default_url(&chain).unwrap_or_else(|| panic!("Unknown URL for chain {}", cli.chain))
-    });
+fn main() {
+    let file_path = "./liquidity_data.json"; // Path to your JSON file
 
-    let tycho_api_key: String =
-        env::var("TYCHO_API_KEY").unwrap_or_else(|_| "sampletoken".to_string());
-
-    // Perform an early check to ensure `RPC_URL` is set.
-    // This prevents errors from occurring later during UI interactions.
-    // Can be commented out if only using the example with uniswap_v2, uniswap_v3 and balancer_v2.
-    
-    // env::var("RPC_URL").expect("RPC_URL env variable should be set");
-
-    // Create communication channels for inter-thread communication
-    let (tick_tx, tick_rx) = mpsc::channel::<BlockUpdate>(12);
-
-    let tycho_message_processor: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
-        let all_tokens = load_all_tokens(
-            tycho_url.as_str(),
-            false,
-            Some(tycho_api_key.as_str()),
-            chain,
-            None,
-            None,
-        )
-        .await;
-
-        // this is just your filter nothing special
-        let tvl_filter = ComponentFilter::with_tvl_range(cli.tvl_threshold, cli.tvl_threshold);
-
-        // streams a live update of your protocol state
-        let mut protocol_stream =
-            register_exchanges(ProtocolStreamBuilder::new(&tycho_url, chain), &chain, tvl_filter)
-                .auth_key(Some(tycho_api_key.clone()))
-                .skip_state_decode_failures(true)
-                .set_tokens(all_tokens)
-                .await
-                .build()
-                .await
-                .expect("Failed building protocol stream");
-
-        // Loop through block updates
-        while let Some(msg) = protocol_stream.next().await {
-            tick_tx
-                .send(msg.unwrap())
-                .await
-                .expect("Sending tick failed!")
+    match parse_uniswap_v2_data(file_path) {
+        Ok(states) => {
+            for (i, state) in states.iter().enumerate() {
+                println!("Pool {}:", i + 1);
+                println!("  reserve0: {}", state.reserve0);
+                println!("  reserve1: {}", state.reserve1);
+            }
         }
-        anyhow::Result::Ok(())
-    });
+        Err(e) => eprintln!("Error parsing data: {}", e),
+    }
 
-    let terminal = ratatui::init();
-    let terminal_app = tokio::spawn(async move {
-        ui::App::new(tick_rx)
-            .run(terminal)
-            .await
-    });
-    let tasks = [tycho_message_processor, terminal_app];
-    let _ = select_all(tasks).await;
-    ratatui::restore();
+    println!("successfully parsed");
 }
