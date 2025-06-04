@@ -1,0 +1,22 @@
+[package]
+name = "ingestor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tycho-simulation = { path = "../../" }
+alloy-primitives = { version = "0.8.9", features = [
+    "getrandom",
+    "rand",
+    "map-foldhash",
+] }
+alloy-sol-types = { version = "0.8.14" }
+alloy = { version = "0.9.2", features = ["providers", "signer-local", "rpc-types-eth"] }
+revm = { version = "17.1.0", features = ["ethersdb", "serde"], optional = true }
+revm-inspectors = { version = "0.10", features = ["serde"], optional = true }
+tokio = { version = "1.38.0", features = ["full"] }
+dotenv = "0.15.0"
+
+[[bin]]
+name = "ingestor"
+path = "src/main.rs"

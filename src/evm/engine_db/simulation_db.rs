@@ -19,6 +19,7 @@ use super::{
 };
 
 /// A wrapper over an actual SimulationDB that allows overriding specific storage slots
+/// basically just a copy of the simulationDB that we can play around with
 pub struct OverriddenSimulationDB<'a, DB: DatabaseRef> {
     /// Wrapped database. Will be queried if a requested item is not found in the overrides.
     pub inner_db: &'a DB,

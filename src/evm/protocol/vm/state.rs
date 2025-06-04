@@ -711,7 +711,7 @@ mod tests {
     }
 
     async fn setup_pool_state() -> EVMPoolState<PreCachedDB> {
-        let data_str = include_str!("assets/balancer_contract_storage_block_20463609.json");
+        let data_str = include_str!("assets/balancer_contract_storage_block_20463609.json"); //SO THIS IS WHERE THEY LOAD IT FROM HOLY
         let data: Value = serde_json::from_str(data_str).expect("Failed to parse JSON");
 
         let accounts: Vec<AccountUpdate> = serde_json::from_value(data["accounts"].clone())

@@ -27,6 +27,8 @@ use tycho_simulation::{
 };
 use utils::get_default_url;
 
+// use serde_json::json;
+
 #[derive(Parser)]
 struct Cli {
     /// The tvl threshold to filter the graph by
@@ -37,11 +39,12 @@ struct Cli {
     pub chain: String,
 }
 
+// this builder basically creATES a live updates stream for blockcahin updates => oif we wanna make it static we gonna have to make our own streamer we can't rely on this shit
 fn register_exchanges(
     mut builder: ProtocolStreamBuilder,
     chain: &Chain,
     tvl_filter: ComponentFilter,
-) -> ProtocolStreamBuilder {
+) -> ProtocolStreamBuilder { //returns a protocol stream builder type with the following values
     match chain {
         Chain::Ethereum => {
             builder = builder
@@ -109,7 +112,8 @@ async fn main() {
     // Perform an early check to ensure `RPC_URL` is set.
     // This prevents errors from occurring later during UI interactions.
     // Can be commented out if only using the example with uniswap_v2, uniswap_v3 and balancer_v2.
-    env::var("RPC_URL").expect("RPC_URL env variable should be set");
+    
+    // env::var("RPC_URL").expect("RPC_URL env variable should be set");
 
     // Create communication channels for inter-thread communication
     let (tick_tx, tick_rx) = mpsc::channel::<BlockUpdate>(12);
@@ -124,7 +128,11 @@ async fn main() {
             None,
         )
         .await;
+
+        // this is just your filter nothing special
         let tvl_filter = ComponentFilter::with_tvl_range(cli.tvl_threshold, cli.tvl_threshold);
+
+        // streams a live update of your protocol state
         let mut protocol_stream =
             register_exchanges(ProtocolStreamBuilder::new(&tycho_url, chain), &chain, tvl_filter)
                 .auth_key(Some(tycho_api_key.clone()))
