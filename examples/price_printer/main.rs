@@ -14,6 +14,7 @@ use tycho_simulation::{
             uniswap_v2::state::UniswapV2State,
             uniswap_v3::state::UniswapV3State,
             uniswap_v4::state::UniswapV4State,
+            pancakeswap_v2::state::PancakeswapV2State,
             vm::state::EVMPoolState,
         },
         stream::ProtocolStreamBuilder,
@@ -30,17 +31,18 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 struct RawUniswapV2Data {
-    uniswap_v2: Vec<RawPool>,
+    uniswap_v2: Vec<RawV2Pool>,
 }
 
 #[derive(Debug, Deserialize)]
-struct RawPool {
+struct RawV2Pool {
     component_id: String,
     attributes: HashMap<String, String>,
     balances: HashMap<String, String>,
 }
 
 fn parse_uniswap_v2_data<P: AsRef<Path>>(path: P) -> Result<Vec<UniswapV2State>, Box<dyn std::error::Error>> {
+    println!("-----------------------Uniswap Swap V2--------------------------");
     let data = fs::read_to_string(path)?;
     let raw_data: RawUniswapV2Data = serde_json::from_str(&data)?;
 
@@ -61,13 +63,48 @@ fn parse_uniswap_v2_data<P: AsRef<Path>>(path: P) -> Result<Vec<UniswapV2State>,
 }
 
 
+// Pancake Swap
+#[derive(Debug, Deserialize)]
+struct RawPancakeV2Data {
+    pancakeswap_v2: Vec<RawPancakeV2Pool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawPancakeV2Pool {
+    component_id: String,
+    attributes: HashMap<String, String>,
+    balances: HashMap<String, String>,
+}
+
+fn parse_pancake_v2_data<P: AsRef<Path>>(path: P) -> Result<Vec<PancakeswapV2State>, Box<dyn std::error::Error>> {
+    println!("-----------------------Pancake Swap V2--------------------------");
+    let data = fs::read_to_string(path)?;
+    let raw_data: RawPancakeV2Data = serde_json::from_str(&data)?;
+
+    let mut states = Vec::new();
+
+    for pool in raw_data.pancakeswap_v2 {
+        let reserve0_hex = pool.attributes.get("reserve0").ok_or("Missing reserve0")?;
+        let reserve1_hex = pool.attributes.get("reserve1").ok_or("Missing reserve1")?;
+
+        let reserve0 = U256::from_str(reserve0_hex)?;
+        let reserve1 = U256::from_str(reserve1_hex)?;
+
+        let state = PancakeswapV2State::new(reserve0, reserve1);
+        states.push(state);
+    }
+
+    Ok(states)
+}
+
+
 fn main() {
     let file_path = "./liquidity_data.json"; // Path to your JSON file
 
     match parse_uniswap_v2_data(file_path) {
         Ok(states) => {
             for (i, state) in states.iter().enumerate() {
-                println!("Pool {}:", i + 1);
+                println!("UniswapV2 Pool {}:", i + 1);
                 println!("  reserve0: {}", state.reserve0);
                 println!("  reserve1: {}", state.reserve1);
             }
@@ -75,5 +112,18 @@ fn main() {
         Err(e) => eprintln!("Error parsing data: {}", e),
     }
 
-    println!("successfully parsed");
+    println!();
+
+    match parse_pancake_v2_data(file_path) {
+        Ok(states) => {
+            for (i, state) in states.iter().enumerate() {
+                println!("PnacakeSwapV2 Pool {}:", i + 1);
+                println!("  reserve0: {}", state.reserve0);
+                println!("  reserve1: {}", state.reserve1);
+            }
+        }
+        Err(e) => eprintln!("Error parsing data: {}", e),
+    }
+
+    
 }
